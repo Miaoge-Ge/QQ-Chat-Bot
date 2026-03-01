@@ -412,9 +412,10 @@ class OneBotClient:
                     fp = self._out_image_file(r["file_path"].strip())
                     if isinstance(fp, str) and fp.strip():
                         await self.send_msg(event, prefix + f"[CQ:image,file={fp}]")
+                        logger.opt(colors=True).info(
+                            "<magenta>BOT</magenta>：图片已发送。 <dim>| tools:</dim> <yellow>image_send</yellow>"
+                        )
                         return
-                await self.send_msg(event, prefix + "发送图片失败。")
-                return
 
             if event.get("message_type") == "group":
                 user_text_for_llm = f"【{sender_name}】说：{user_text}"
@@ -498,7 +499,7 @@ class OneBotClient:
                     first_image = False
                     appended_any_image = True
             if msg == prefix and not appended_any_image:
-                msg = prefix + (answer.strip() or "发送图片失败。")
+                msg = prefix + (answer.strip() if answer.strip() else " ")
             await self.send_msg(event, msg)
         except asyncio.CancelledError:
             raise

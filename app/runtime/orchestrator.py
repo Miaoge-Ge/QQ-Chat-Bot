@@ -101,7 +101,7 @@ class Orchestrator:
 
         if self._is_reset_command(user_text):
             self._history.append(session_id, "meta", "__clear__")
-            msg = "好的，上下文已清除。现在是一个全新的对话。\n\n我是阿棠，有什么可以帮你的吗？"
+            msg = "好的，上下文已清除。现在是一个全新的对话。"
             self._history.append(session_id, "assistant", msg)
             return msg, [], []
 
@@ -143,9 +143,7 @@ class Orchestrator:
         final_text = ""
         used_tools: list[str] = []
         attachments: list[dict[str, str]] = []
-        saved_image_path: str | None = None
-        tool_reply_text: str | None = None
-        used_admin_manage = False
+        weather_reply: str | None = None
         for _ in range(4):
             try:
                 resp = await self._provider.chat(messages, tools_payload)
@@ -153,7 +151,7 @@ class Orchestrator:
                 raise
             except Exception:
                 logger.opt(exception=True).error("llm_call_failed")
-                final_text = "模型服务暂时不可用，请稍后再试。"
+                final_text = "服务暂不可用，请稍后再试。"
                 break
             final_text = resp.content or ""
             messages.append({"role": "assistant", "content": resp.content or "", "tool_calls": resp.tool_calls})
@@ -165,31 +163,15 @@ class Orchestrator:
                     used_tools.append(name)
 
             results = await self._tools.run(resp.tool_calls, ctx)
-            tool_error_text: str | None = None
             for r in results:
-                if r["name"] in ("image_generate", "image_save", "image_repo_random") and isinstance(r["result"], dict):
+                if r["name"] in ("image_generate", "image_repo_random") and isinstance(r.get("result"), dict):
                     fp = r["result"].get("file_path")
                     if isinstance(fp, str) and fp.strip():
-                        if r["name"] in ("image_generate", "image_repo_random"):
-                            attachments.append({"type": "image", "file_path": fp.strip()})
-                        if r["name"] == "image_save":
-                            saved_image_path = fp.strip()
-                        if isinstance(r, dict):
-                            r["result"] = {"status": "success"}
-                    else:
-                        m = r["result"].get("message")
-                        if not (isinstance(m, str) and m.strip()):
-                            m = str(r["result"].get("error") or "生成失败")
-                        m = (m or "").strip()
-                        if isinstance(r, dict):
-                            r["result"] = {"status": "error", "message": m}
-                        tool_error_text = f"图像处理失败：{m}" if m else "图像处理失败。"
-                if isinstance(r, dict) and isinstance(r.get("result"), dict) and tool_reply_text is None:
+                        attachments.append({"type": "image", "file_path": fp.strip()})
+                if r["name"] == "weather_query" and isinstance(r.get("result"), dict) and weather_reply is None:
                     rt = r["result"].get("reply")
                     if isinstance(rt, str) and rt.strip():
-                        tool_reply_text = rt.strip()
-                if isinstance(r, dict) and r.get("name") == "admin_manage":
-                    used_admin_manage = True
+                        weather_reply = rt.strip()
 
                 tool_call_id = r.get("tool_call_id") if isinstance(r, dict) else None
                 result_content = r.get("result") if isinstance(r, dict) else r
@@ -201,19 +183,12 @@ class Orchestrator:
                         "content": self._safe_tool_content(result_content),
                     }
                 )
-                if tool_error_text:
-                    break
-            if tool_error_text:
-                final_text = tool_error_text
+            if weather_reply:
+                final_text = weather_reply
                 break
 
-        if not final_text.strip():
-            if isinstance(saved_image_path, str) and saved_image_path.strip():
-                final_text = f"保存成功：{saved_image_path.strip()}"
-            elif isinstance(tool_reply_text, str) and tool_reply_text.strip():
-                final_text = tool_reply_text.strip()
-        elif used_admin_manage and isinstance(tool_reply_text, str) and tool_reply_text.strip():
-            final_text = tool_reply_text.strip()
+        if weather_reply:
+            final_text = weather_reply
 
         if user_text.strip():
             # 保存到历史记录时，去掉可能添加的【发送者昵称】前缀，保持历史记录的纯净性？

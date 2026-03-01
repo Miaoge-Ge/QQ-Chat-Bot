@@ -18,6 +18,73 @@ from ...core.http_client import get_client
 from ...tools.base import Tool, ToolContext
 
 
+def _extract_api_error(exc: Exception) -> tuple[int | None, str | None, str | None]:
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, bool):
+        status = None
+    if status is not None:
+        try:
+            status = int(status)
+        except (TypeError, ValueError):
+            status = None
+
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict):
+            code = err.get("code")
+            msg = err.get("message")
+            t = err.get("type")
+            return status, str(code) if isinstance(code, str) and code else (str(t) if isinstance(t, str) and t else None), str(msg) if isinstance(msg, str) and msg else None
+
+    resp = getattr(exc, "response", None)
+    if resp is not None:
+        try:
+            status2 = getattr(resp, "status_code", None)
+            if status is None and status2 is not None:
+                status = int(status2)
+        except (TypeError, ValueError):
+            pass
+        try:
+            j = resp.json()
+        except Exception:
+            j = None
+        if isinstance(j, dict):
+            err = j.get("error")
+            if isinstance(err, dict):
+                code = err.get("code")
+                msg = err.get("message")
+                t = err.get("type")
+                return status, str(code) if isinstance(code, str) and code else (str(t) if isinstance(t, str) and t else None), str(msg) if isinstance(msg, str) and msg else None
+
+    return status, None, None
+
+
+def _friendly_generate_error(status: int | None, code: str | None, msg: str | None) -> dict[str, Any]:
+    c = (code or "").strip()
+    m = (msg or "").strip()
+    if c == "OutputImageSensitiveContentDetected":
+        return {
+            "error": "policy_violation",
+            "message": "生成失败：图片可能触发敏感内容限制。请把描述改得更保守（减少裸露/擦边/暴力等细节），或换一个更健康的主题。",
+        }
+    if status == 401:
+        return {"error": "unauthorized", "message": "生成失败：鉴权失败（API Key 无效或无权限）。"}
+    if status == 403:
+        return {"error": "forbidden", "message": "生成失败：无权限调用该模型或接口。"}
+    if status == 429:
+        return {"error": "rate_limited", "message": "生成失败：请求过于频繁或额度不足，请稍后重试。"}
+    if status == 400:
+        return {"error": "bad_request", "message": "生成失败：请求参数不合法或触发内容限制，请调整提示词后重试。"}
+    if status is not None and status >= 500:
+        return {"error": "api_error", "message": "生成失败：服务端错误，请稍后重试。"}
+    if m:
+        short = m.split("Request id:", 1)[0].strip()
+        if short:
+            return {"error": "api_error", "message": f"生成失败：{short}"}
+    return {"error": "api_error", "message": "生成失败：请求未成功，请稍后重试或更换提示词。"}
+
+
 def _openai_base_url() -> str:
     base = settings.IMAGE_GENERATE_BASE_URL or settings.OPENAI_BASE_URL
     return (base or "").rstrip("/")
@@ -181,6 +248,10 @@ async def tool_handler(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]
     except asyncio.CancelledError:
         raise
     except Exception as e:
+        status, code, msg = _extract_api_error(e)
+        if status is not None or code or msg:
+            logger.warning("image_generate_api_error: model={} base_url={}", model, base_url)
+            return _friendly_generate_error(status, code, msg)
         logger.opt(exception=True).error("image_generate_failed: model={} base_url={}", model, base_url)
         msg = str(e)
         if len(msg) > 2000:

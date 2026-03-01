@@ -30,7 +30,7 @@ def _is_admin(ctx: ToolContext) -> bool:
 
 async def tool_handler(args: dict[str, Any], ctx: ToolContext):
     if not _is_admin(ctx):
-        return {"error": "permission_denied", "reply": "无权限：仅管理员可使用该功能。"}
+        return {"error": "permission_denied"}
 
     action = str(args.get("action") or "").strip()
     hours_v = args.get("hours")
@@ -38,25 +38,25 @@ async def tool_handler(args: dict[str, Any], ctx: ToolContext):
 
     if action == "shutdown":
         store.sleep_forever()
-        return {"status": "ok", "reply": "机器人已进入睡眠模式。"}
+        return {"status": "ok", "action": "shutdown"}
 
     if action == "shutdown_in":
         try:
             h = float(hours_v)
         except (TypeError, ValueError):
-            return {"error": "invalid_hours", "reply": "参数错误：hours 必须是数字。"}
+            return {"error": "invalid_hours"}
         if h <= 0:
-            return {"error": "invalid_hours", "reply": "参数错误：hours 必须大于 0。"}
+            return {"error": "invalid_hours"}
         until_ts = time.time() + h * 3600.0
         until_s = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(until_ts))
         store.sleep_for_hours(h)
-        return {"status": "ok", "reply": f"机器人将于 {until_s} 自动开机，现在进入睡眠。"}
+        return {"status": "ok", "action": "shutdown_in", "hours": h, "wake_at": until_s}
 
     if action == "start":
         store.clear()
-        return {"status": "ok", "reply": "机器人已恢复运行。"}
+        return {"status": "ok", "action": "start"}
 
-    return {"error": "invalid_action", "reply": "参数错误：action 必须是 shutdown / shutdown_in / start。"}
+    return {"error": "invalid_action"}
 
 
 TOOL = Tool(

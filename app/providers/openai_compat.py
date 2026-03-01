@@ -79,7 +79,26 @@ class OpenAICompatProvider(LLMProvider):
         except httpx.HTTPError as e:
             raise RuntimeError("openai_compat request failed") from e
         if r.status_code >= 400:
-            raise RuntimeError(f"openai_compat error: {r.status_code}: {r.text}")
+            code = None
+            msg = None
+            try:
+                j = r.json()
+            except Exception:
+                j = None
+            if isinstance(j, dict):
+                err = j.get("error")
+                if isinstance(err, dict):
+                    c = err.get("code") or err.get("type")
+                    m = err.get("message")
+                    if isinstance(c, str) and c.strip():
+                        code = c.strip()
+                    if isinstance(m, str) and m.strip():
+                        msg = m.strip().split("Request id:", 1)[0].strip()
+            if msg:
+                raise RuntimeError(f"openai_compat error: {r.status_code}: {msg}")
+            if code:
+                raise RuntimeError(f"openai_compat error: {r.status_code}: {code}")
+            raise RuntimeError(f"openai_compat error: {r.status_code}")
         data = r.json()
 
         msg = None

@@ -13,6 +13,27 @@ from ...core.image import download_image_as_base64
 from ...tools.base import Tool, ToolContext
 
 
+_STYLE = "请用精简中文回答，80 字以内。"
+
+def _extract_error_message(resp: httpx.Response) -> tuple[str | None, str | None]:
+    code = None
+    msg = None
+    try:
+        j = resp.json()
+    except Exception:
+        j = None
+    if isinstance(j, dict):
+        err = j.get("error")
+        if isinstance(err, dict):
+            c = err.get("code") or err.get("type")
+            m = err.get("message")
+            if isinstance(c, str) and c.strip():
+                code = c.strip()
+            if isinstance(m, str) and m.strip():
+                msg = m.strip().split("Request id:", 1)[0].strip()
+    return code, msg
+
+
 def _vl_base_url() -> str:
     base = settings.VL_BASE_URL or settings.OPENAI_BASE_URL
     return base.rstrip("/")
@@ -61,7 +82,9 @@ async def tool_handler(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]
     if not image:
         return {"error": "missing_image"}
     if not question:
-        question = "请详细描述这张图片的内容。"
+        question = f"请描述这张图片。{_STYLE}"
+    else:
+        question = f"{question}\n\n{_STYLE}"
 
     data_url = await download_image_as_base64(image, 60.0)
     if not data_url:
@@ -120,25 +143,33 @@ async def tool_handler(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]
         client = get_client()
         resp = await client.post(url, json=body, headers=headers, timeout=90.0)
         if resp.status_code >= 400:
-            try:
-                j = resp.json()
-            except json.JSONDecodeError:
-                j = None
-            if resp.status_code == 400 and _should_fallback_model(j):
+            code, msg = _extract_error_message(resp)
+            if resp.status_code == 400 and _should_fallback_model(resp.json() if resp.headers.get("content-type", "").startswith("application/json") else None):
                 fallback_model = "doubao-1.5-vision-pro-32k-250115"
                 if body.get("model") != fallback_model:
                     body2 = dict(body)
                     body2["model"] = fallback_model
                     resp2 = await client.post(url, json=body2, headers=headers, timeout=90.0)
                     if resp2.status_code >= 400:
-                        return {"error": "api_error", "status": resp2.status_code, "message": resp2.text}
+                        code2, msg2 = _extract_error_message(resp2)
+                        out: dict[str, Any] = {"error": "api_error", "status": int(resp2.status_code)}
+                        if code2:
+                            out["code"] = code2
+                        if msg2:
+                            out["message"] = msg2
+                        return out
                     data2 = resp2.json()
                     choices2 = data2.get("choices")
                     if not isinstance(choices2, list) or not choices2:
                         return {"error": "no_content", "message": "模型未返回任何内容"}
                     content2 = choices2[0]["message"]["content"]
                     return {"text": content2, "model": fallback_model}
-            return {"error": "api_error", "status": resp.status_code, "message": resp.text}
+            out: dict[str, Any] = {"error": "api_error", "status": int(resp.status_code)}
+            if code:
+                out["code"] = code
+            if msg:
+                out["message"] = msg
+            return out
         
         data = resp.json()
         

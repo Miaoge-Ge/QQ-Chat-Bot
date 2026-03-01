@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 from loguru import logger
@@ -45,6 +46,18 @@ class ToolRegistry:
             except Exception as e:
                 logger.opt(exception=True).warning(f"tool_failed: {call.get('name')}")
                 msg = str(e)
+                m2 = msg.lstrip()
+                if m2.startswith("{") and len(m2) <= 20000:
+                    try:
+                        j = json.loads(m2)
+                    except Exception:
+                        j = None
+                    if isinstance(j, dict):
+                        err = j.get("error")
+                        if isinstance(err, dict):
+                            m = err.get("message")
+                            if isinstance(m, str) and m.strip():
+                                msg = m.strip().split("Request id:", 1)[0].strip()
                 if len(msg) > 2000:
                     msg = msg[:2000].rstrip() + "…"
                 out.append(

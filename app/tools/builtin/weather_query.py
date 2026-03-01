@@ -190,7 +190,7 @@ async def tool_handler(args, _ctx):
             return v[0]
         return None
 
-    return {
+    out = {
         "location": place_name,
         "latitude": lat,
         "longitude": lon,
@@ -213,6 +213,30 @@ async def tool_handler(args, _ctx):
         },
         "source": "open-meteo",
     }
+
+    cur_t = out["current"].get("temperature_c")
+    feel_t = out["current"].get("apparent_temperature_c")
+    hum = out["current"].get("humidity_percent")
+    wind = out["current"].get("wind_speed_kmh")
+    pop = out["today"].get("precipitation_probability_max_percent")
+    tmin = out["today"].get("temperature_min_c")
+    tmax = out["today"].get("temperature_max_c")
+
+    def _n(v: Any, suf: str = "") -> str:
+        if isinstance(v, (int, float)):
+            if float(v).is_integer():
+                return f"{int(v)}{suf}"
+            return f"{v:.1f}{suf}"
+        return "-"
+
+    weather = (out["current"].get("weather_text") or "").strip() or "未知"
+    loc = (out.get("location") or "").strip() or "天气"
+    out["reply"] = (
+        f"{loc}：{weather}，{_n(cur_t,'℃')}（体感{_n(feel_t,'℃')}）\n"
+        f"湿度{_n(hum,'%')}，风速{_n(wind,'km/h')}，降水概率{_n(pop,'%')}\n"
+        f"今日温度{_n(tmin,'℃')}~{_n(tmax,'℃')}"
+    )
+    return out
 
 
 TOOL = Tool(
