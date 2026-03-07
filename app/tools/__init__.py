@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 from ..config import settings
-from .builtin import BUILTIN_TOOLS
+from .builtin import ALL_BUILTIN_TOOLS
+from .enabled_tools import is_enabled
 from .registry import ToolRegistry
 
 
 def build_tool_registry() -> ToolRegistry:
     reg = ToolRegistry()
-    for t in BUILTIN_TOOLS:
+    for t in ALL_BUILTIN_TOOLS:
+        if not is_enabled(t.name):
+            continue
         if t.name == "web_search" and not settings.WEB_SEARCH_ENABLED:
             continue
         reg.register(t)
-
-    # Always register image tools if they are available
-    from .builtin import image_understand
-    reg.register(image_understand.TOOL)
 
     return reg

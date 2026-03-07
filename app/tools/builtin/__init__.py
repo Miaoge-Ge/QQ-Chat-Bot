@@ -7,6 +7,7 @@ from .model_name import TOOL as MODEL_NAME
 from .time_now import TOOL as TIME_NOW
 from .web_search import TOOL as WEB_SEARCH
 from .weather_query import TOOL as WEATHER_QUERY
+from .image_understand import TOOL as IMAGE_UNDERSTAND
 
 
 def _to_tool(spec: dict | Tool) -> Tool:
@@ -19,7 +20,7 @@ def _to_tool(spec: dict | Tool) -> Tool:
         handler=spec["handler"],
     )
 
-BUILTIN_TOOLS = [
+ALL_BUILTIN_TOOLS = [
     _to_tool(ADMIN_MANAGE),
     _to_tool(TIME_NOW),
     _to_tool(MODEL_NAME),
@@ -28,4 +29,5 @@ BUILTIN_TOOLS = [
     _to_tool(IMAGE_SAVE),
     _to_tool(IMAGE_REPO_RANDOM),
     _to_tool(IMAGE_GENERATE),
+    _to_tool(IMAGE_UNDERSTAND),
 ]

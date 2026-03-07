@@ -38,9 +38,23 @@ def _is_url(s: str) -> bool:
 def _safe_basename(name: str) -> str:
     s = (name or "").strip().replace("\\", "/")
     s = s.rsplit("/", 1)[-1]
-    s = re.sub(r"[^A-Za-z0-9._-]+", "_", s)
-    s = s.strip("._-")
+    s = re.sub(r"[\x00-\x1f<>:\"/\\|?*]+", "_", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    s = s.strip().strip(".")
     return s[:120] if s else ""
+
+
+def _unique_path(p: Path) -> Path:
+    if not p.exists():
+        return p
+    stem = p.stem
+    suf = p.suffix
+    parent = p.parent
+    for i in range(1, 1000):
+        cand = parent / f"{stem}_{i}{suf}"
+        if not cand.exists():
+            return cand
+    return parent / f"{stem}_{uuid.uuid4().hex}{suf}"
 
 
 def _pick_ext_from_name(name: str) -> str | None:
@@ -62,10 +76,12 @@ async def tool_handler(args: dict[str, Any], _ctx) -> dict[str, Any]:
     if not image_ref:
         return {"error": "missing_image_ref"}
 
-    filename = _safe_basename(str(args.get("filename") or "").strip())
+    filename = _safe_basename(str(args.get("filename") or args.get("name") or "").strip())
+    user_named = bool(filename)
     ext = _pick_ext_from_name(filename) or _pick_ext_from_name(image_ref) or ".png"
 
-    base_dir = Path("./data/image_save").resolve()
+    root = Path(__file__).resolve().parents[3]
+    base_dir = (root / "data" / "image_save").resolve()
     try:
         base_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
@@ -95,6 +111,8 @@ async def tool_handler(args: dict[str, Any], _ctx) -> dict[str, Any]:
         ct_ext = _pick_ext_from_content_type(r.headers.get("content-type"))
         if ct_ext and ct_ext != ext:
             out_path = (base_dir / f"{Path(out_name).stem}{ct_ext}").resolve()
+        if not user_named:
+            out_path = _unique_path(out_path)
         try:
             out_path.write_bytes(r.content)
         except OSError as e:
@@ -105,14 +123,15 @@ async def tool_handler(args: dict[str, Any], _ctx) -> dict[str, Any]:
             return {"error": "source_not_found"}
         src_ext = _pick_ext_from_name(src.name)
         if src_ext and src_ext != ext and not filename:
-            out_path = (base_dir / f"{out_name}{src_ext}").resolve()
+            out_path = (base_dir / f"{Path(out_name).stem}{src_ext}").resolve()
+        if not user_named:
+            out_path = _unique_path(out_path)
         try:
             out_path.write_bytes(src.read_bytes())
         except OSError as e:
             return {"error": "copy_failed", "message": str(e)}
 
-    rel_path = os.path.relpath(str(out_path), str(Path(".").resolve()))
-    return {"file_path": rel_path}
+    return {"file_path": str(out_path), "filename": out_path.name}
 
 
 TOOL = Tool(
@@ -122,7 +141,8 @@ TOOL = Tool(
         "type": "object",
         "properties": {
             "image_ref": {"type": "string", "description": "图片 URL 或本地文件路径"},
-            "filename": {"type": "string", "description": "可选：保存文件名（不含目录）"},
+            "name": {"type": "string", "description": "可选：保存文件名（不含目录），例如 iphone 17 pm.jpg"},
+            "filename": {"type": "string", "description": "可选：保存文件名（不含目录）（兼容旧字段）"},
         },
         "required": ["image_ref"],
         "additionalProperties": False,

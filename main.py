@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import os
 import sys
 
 from loguru import logger
@@ -23,6 +25,17 @@ async def main() -> None:
         logger.error("OPENAI_API_KEY is not set. Exiting.")
         sys.exit(1)
     try:
+        p = os.path.abspath(settings.SYSTEM_PROMPT_PATH)
+        if os.path.exists(p) and os.path.isfile(p):
+            with open(p, "rb") as f:
+                b = f.read()
+            sha = hashlib.sha256(b).hexdigest()[:12]
+            logger.info("system_prompt_loaded: path={} bytes={} sha256={}", p, len(b), sha)
+        else:
+            logger.warning("system_prompt_missing: path={}", p)
+    except Exception as e:
+        logger.warning("system_prompt_probe_failed: {}", e)
+    try:
         provider = build_provider()
         tools = build_tool_registry()
         history = HistoryStore()
@@ -39,4 +52,3 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("已退出")
-

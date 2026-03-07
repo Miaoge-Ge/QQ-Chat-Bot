@@ -400,22 +400,37 @@ class OneBotClient:
                     prefix += f"[CQ:at,qq={event.get('user_id')}] "
 
             cmd = user_text.strip()
-            is_send_image_cmd = cmd in ("发送图片", "发图片", "来张图", "来一张图", "随机图片", "随机发送图片", "发图", "来图")
+            send_image_cmds = ("发送图片", "发图片", "来张图", "来一张图", "随机图片", "随机发送图片", "发图", "来图")
+            is_send_image_cmd = False
+            send_image_name = ""
+            for k in send_image_cmds:
+                if cmd == k:
+                    is_send_image_cmd = True
+                    break
+                if cmd.startswith(k):
+                    rest = cmd[len(k) :].strip()
+                    if rest:
+                        is_send_image_cmd = True
+                        send_image_name = rest
+                        break
             if not is_send_image_cmd:
                 if ("图片" in cmd or "图" in cmd) and any(k in cmd for k in ("发", "来", "随机")) and len(cmd) <= 20:
                     is_send_image_cmd = True
             if is_send_image_cmd:
+                from ..tools.enabled_tools import is_enabled
                 from ..tools.builtin.image_repo_random import tool_handler as image_repo_random_handler
 
-                r = await image_repo_random_handler({}, None)
-                if isinstance(r, dict) and isinstance(r.get("file_path"), str) and r["file_path"].strip():
-                    fp = self._out_image_file(r["file_path"].strip())
-                    if isinstance(fp, str) and fp.strip():
-                        await self.send_msg(event, prefix + f"[CQ:image,file={fp}]")
-                        logger.opt(colors=True).info(
-                            "<magenta>BOT</magenta>：图片已发送。 <dim>| tools:</dim> <yellow>image_send</yellow>"
-                        )
-                        return
+                if is_enabled("image_repo_random"):
+                    args = {"name": send_image_name} if send_image_name else {}
+                    r = await image_repo_random_handler(args, None)
+                    if isinstance(r, dict) and isinstance(r.get("file_path"), str) and r["file_path"].strip():
+                        fp = self._out_image_file(r["file_path"].strip())
+                        if isinstance(fp, str) and fp.strip():
+                            await self.send_msg(event, prefix + f"[CQ:image,file={fp}]")
+                            logger.opt(colors=True).info(
+                                "<magenta>BOT</magenta>：图片已发送。 <dim>| tools:</dim> <yellow>image_send</yellow>"
+                            )
+                            return
 
             if event.get("message_type") == "group":
                 user_text_for_llm = f"【{sender_name}】说：{user_text}"
